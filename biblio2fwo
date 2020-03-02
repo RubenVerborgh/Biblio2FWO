@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+const { readFileSync } = require('fs');
+const xml2js = require('xml2js');
+const assert = require('assert');
+
+// Parse process arguments
+const args = process.argv.slice(2);
+if (args.length !== 1) {
+  console.error('usage: biblio2fwo publications.xml');
+  process.exit(1);
+}
+processDocument(args[0]);
+
+async function processDocument(file) {
+  // Parse the XML file from Biblio
+  const xml = readFileSync(file, { encoding: 'utf8' });
+  const parser = new xml2js.Parser();
+  const publications = await parser.parseStringPromise(xml);
+
+  // Process all individual publications
+  publications.modsCollection.mods =
+    publications.modsCollection.mods.filter(processPublication);
+
+  // Output the result as XML
+  const builder = new xml2js.Builder();
+  const output = builder.buildObject(publications);
+  process.stdout.write(output);
+  process.stdout.write('\n');
+}
+
+function processPublication(publication) {
+  // Determine the publication type
+  const { extension } = publication;
+  const publicationType = extension
+    .find(e => e.$.type === 'pt').pubtype;
+  const biblioType = publicationType
+    .find(t => t.$.src === 'ug');
+  const fwoType = publicationType
+    .find(t => t.$.src === 'vabb');
+
+  // Correct P1 into A1.1
+  if (biblioType._ === 'P1')
+    fwoType._ = 'VABB-1';
+  // Remove publication without classification (except PhD)
+  else if (!fwoType && biblioType._ !== 'D1')
+    return false;
+
+  // Include the publication
+  return true;
+}
